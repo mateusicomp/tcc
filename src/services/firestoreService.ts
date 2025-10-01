@@ -19,7 +19,7 @@ export const carregarUltimoEstado = async () => {
       });
     });
 
-    return historico[0] || null; // Retorna o último estado ou null
+    return historico[0] || null; 
   } catch (error) {
     console.error("Erro ao carregar último estado:", error);
     return null;

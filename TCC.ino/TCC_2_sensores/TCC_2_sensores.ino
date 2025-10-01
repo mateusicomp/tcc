@@ -9,31 +9,39 @@ PubSubClient mqttClient(espClient);
 const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
-const char* ssid = "wifi-zone-ufam-1";
-const char* password = "";
+const char* ssid = "WiFi-LMA";
+const char* password = "@ufam.lma";
 
 const char* FIREBASE_HOST = "https://firestore.googleapis.com/v1/projects/tcc1-155fa/databases/(default)/documents/sensores";
 const char* FIREBASE_API_KEY = "AIzaSyD-3x3bJH3r2n0hyngOOC7_WOuvPBHo_T4";
 
 #define SENSOR_BAIXO_PIN 18
-#define SENSOR_MEDIO_PIN 19
 #define SENSOR_ALTO_PIN 21
 #define BOMBA_ATIVACAO_PIN 22  
-#define BOMBA_STATUS_PIN 23    
+#define BOMBA_STATUS_PIN 23   
+#define LED_BAIXO_PIN 32  
+#define LED_MEDIO_PIN 19 
+#define LED_ALTO_PIN 33 
 
 bool lastStateBaixo = LOW;
-bool lastStateMedio = LOW;
 bool lastStateAlto = LOW;
-String ultimoNivel = "nenhum";  
+bool altoCaiu = false;
 
 void setup() {
   Serial.begin(115200);
   
   pinMode(SENSOR_BAIXO_PIN, INPUT_PULLDOWN);
-  pinMode(SENSOR_MEDIO_PIN, INPUT_PULLDOWN);
   pinMode(SENSOR_ALTO_PIN, INPUT_PULLDOWN);
   pinMode(BOMBA_ATIVACAO_PIN, OUTPUT);
   pinMode(BOMBA_STATUS_PIN, INPUT_PULLDOWN);
+
+  pinMode(LED_BAIXO_PIN, OUTPUT);
+  pinMode(LED_MEDIO_PIN, OUTPUT);           
+  pinMode(LED_ALTO_PIN,  OUTPUT);
+
+  digitalWrite(LED_BAIXO_PIN, LOW);
+  digitalWrite(LED_MEDIO_PIN, LOW);  
+  digitalWrite(LED_ALTO_PIN, LOW);
 
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao WiFi...");
@@ -55,9 +63,20 @@ void setup() {
 
 void loop() {
   mqttClient.loop();
+  verificarSensor(SENSOR_ALTO_PIN, lastStateAlto, "alto"); 
   verificarSensor(SENSOR_BAIXO_PIN, lastStateBaixo, "baixo");
-  verificarSensor(SENSOR_MEDIO_PIN, lastStateMedio, "medio");
-  verificarSensor(SENSOR_ALTO_PIN, lastStateAlto, "alto");
+
+bool condicaoMedio = (digitalRead(SENSOR_BAIXO_PIN) == LOW) && 
+                     (digitalRead(SENSOR_ALTO_PIN)  == LOW);
+
+digitalWrite(LED_MEDIO_PIN, condicaoMedio ? HIGH : LOW);
+
+bool condicaoBaixo = (digitalRead(SENSOR_BAIXO_PIN) == HIGH);
+digitalWrite(LED_BAIXO_PIN, condicaoBaixo ? HIGH : LOW);
+
+bool condicaoAlto = (digitalRead(SENSOR_ALTO_PIN) == HIGH);
+digitalWrite(LED_ALTO_PIN, condicaoAlto ? HIGH : LOW);
+
 
   delay(500);
 }
@@ -104,27 +123,45 @@ void callbackMQTT(char* topic, byte* payload, unsigned int length) {
 
 
 void verificarSensor(int pino, bool &ultimoEstado, const char* nome) {
+  // Debounce simples
+  bool leitura = digitalRead(pino);
+  delay(15);
   bool estadoAtual = digitalRead(pino);
+  if (estadoAtual != leitura) return; // ruído
 
   if (estadoAtual != ultimoEstado) {
     ultimoEstado = estadoAtual;
-    String mensagem = estadoAtual ? "subiu" : "desceu";
-    
-    if (validarSequencia(nome, estadoAtual)) {
-      Serial.printf("Sensor, %s: %s\n", nome, mensagem.c_str());
-      
-      enviarDadosFirestore(nome, mensagem);
 
-      if (digitalRead(SENSOR_BAIXO_PIN) == HIGH && digitalRead(SENSOR_MEDIO_PIN) == LOW) {
-        ativarBomba();
-      }
+    // "subindo" por sensor:
+    //  - baixo: SUBIU quando ABRIU (LOW)
+    //  - alto : SUBIU quando FECHOU (HIGH)
+    bool subindo = (strcmp(nome, "baixo") == 0) ? (estadoAtual == LOW)
+                                                : (estadoAtual == HIGH);
 
-      if (strcmp(nome, "alto") == 0 && estadoAtual) {
+    // Mensagem (mantém a inversão apenas para o "baixo")
+    const char* msg;
+    if (strcmp(nome, "baixo") == 0) {
+      // baixo: FECHOU(HIGH)=desceu, ABRIU(LOW)=subiu
+      msg = (estadoAtual == HIGH) ? "desceu" : "subiu";
+    } else {
+      // alto: FECHOU(HIGH)=subiu, ABRIU(LOW)=desceu
+      msg = (estadoAtual == HIGH) ? "subiu" : "desceu";
+    }
+
+    if (validarSequencia2Niveis(nome, subindo)) {
+      Serial.printf("Sensor %s: %s\n", nome, msg);
+      enviarDadosFirestore(nome, msg);
+
+      if (strcmp(nome, "alto") == 0 && subindo) { // alto FECHOU -> cheio
         desligarBomba();
+        altoCaiu = false;
       }
-
-      if (estadoAtual) {
-        ultimoNivel = nome;
+      if (strcmp(nome, "alto") == 0 && !subindo) { // alto ABRIU -> começou a esvaziar
+        altoCaiu = true;
+      }
+      if (strcmp(nome, "baixo") == 0 && !subindo && altoCaiu) { // baixo FECHOU após alto cair -> liga
+        ativarBomba();
+        altoCaiu = false;
       }
     } else {
       Serial.println("Erro: Mudança de nível inválida!");
@@ -133,18 +170,34 @@ void verificarSensor(int pino, bool &ultimoEstado, const char* nome) {
 }
 
 
-bool validarSequencia(const char* nome, bool subindo) {
+
+bool validarSequencia2Niveis(const char* nome, bool subindo) {
+  bool baixo = digitalRead(SENSOR_BAIXO_PIN);
+  bool alto  = digitalRead(SENSOR_ALTO_PIN);
+
   if (subindo) {
-    if ((strcmp(nome, "baixo") == 0) || 
-        (strcmp(nome, "medio") == 0 && (ultimoNivel == "baixo" || ultimoNivel == "medio")) || 
-        (strcmp(nome, "alto") == 0 && ultimoNivel == "medio")) {
+    // "subindo" físico:
+    //  - baixo: ABRIU (LOW)
+    //  - alto : FECHOU (HIGH)
+    if (strcmp(nome, "baixo") == 0) {
+      // início do enchimento: pode abrir a qualquer momento
       return true;
     }
+    if (strcmp(nome, "alto") == 0) {
+      // alto só deve fechar se baixo já estiver alto (enchendo corretamente)
+      return (baixo == HIGH);
+    }
   } else {
-    if ((strcmp(nome, "baixo") == 0) ||
-        (strcmp(nome, "medio") == 0 && (ultimoNivel == "alto" || ultimoNivel == "medio")) ||
-        (strcmp(nome, "alto") == 0)) {
-      return true;
+    // "descendo" físico:
+    //  - baixo: FECHOU (HIGH)
+    //  - alto : ABRIU  (LOW)
+    if (strcmp(nome, "alto") == 0) {
+      // alto cai primeiro ao esvaziar; baixo ainda deve estar HIGH
+      return (baixo == HIGH);
+    }
+    if (strcmp(nome, "baixo") == 0) {
+      // baixo só deve fechar quando alto já estiver baixo
+      return (alto == LOW);
     }
   }
   return false;
@@ -218,7 +271,7 @@ void enviarComandoFirestore(String mensagem) {
 
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
-  
+
     int httpResponseCode = http.POST(jsonPayload);
 
     if (httpResponseCode > 0) {
@@ -242,6 +295,7 @@ String getISOTime() {
   strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
   return String(buffer);
 }
+
 
 void esperarSyncTime() {
   struct tm timeinfo;
