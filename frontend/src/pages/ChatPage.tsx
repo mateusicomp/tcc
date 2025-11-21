@@ -4,9 +4,11 @@ import { ArrowLeft, Send, Trash2, Bot, User } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { sendChat, type Role } from "../services/aiService";
+import { 
+  type Role,
+  sendAgentQuestion,
+} from "../services/aiService";
 import { motion, AnimatePresence } from "motion/react";
-
 
 interface Message {
   id: string;
@@ -23,27 +25,26 @@ export function ChatPage() {
       id: "1",
       role: "assistant",
       content:
-        "Olá! Sou o assistente do AquaMonitor. Como posso ajudá-lo hoje? Posso responder dúvidas sobre consumo de água, energia, sensores e muito mais!",
+        "Olá! Sou o assistente do AquaMonitor. Posso te ajudar a analisar os eventos do reservatório, como quantas vezes a caixa ficou vazia, cheia, tempo de funcionamento e resumos por período.",
       timestamp: new Date(),
     },
   ]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  // sessionId não é mais usado pelo agente, mas se quiser pode remover completamente
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Scroll automático para última mensagem
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // Sugestões de perguntas rápidas
   const quickQuestions = [
-    "Qual meu consumo médio?",
-    "Como economizar água?",
-    "Qual o status da bomba?",
-    "Gerar relatório",
+    "Me dê um resumo dos eventos dos sensores nesta semana.",
+    "Quantas vezes a caixa ficou vazia nos últimos 20 dias?",
+    "Quantas vezes a caixa ficou cheia nesse mês?",
+    "Quanto tempo a caixa ficou vazia neste mês?",
   ];
 
   function autoGrow() {
@@ -58,14 +59,14 @@ export function ChatPage() {
   function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage(); 
+      handleSendMessage();
     }
   }
-  
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
 
-    // Adiciona mensagem do usuário (mantive igual)
+    // 1) Adiciona mensagem do usuário ao histórico visual
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -77,31 +78,28 @@ export function ChatPage() {
     setInputValue("");
     setIsTyping(true);
 
-    // Chamada real ao backend de IA
     try {
-      // Histórico no formato aceito pelo serviço (inclui system)
-      const historyForLLM: { role: Role; content: string }[] = [
-        { role: "system", content: "Você é um assistente do AquaMonitor." },
-        ...messages.map(m => ({ role: m.role as Role, content: m.content })),
-        { role: "user", content: userMessage.content },
-      ];
+      // 2) Chama o AGENTE no backend, passando apenas a pergunta
+      const res = await sendAgentQuestion(userMessage.content);
 
-      const res = await sendChat(historyForLLM, sessionId);
-      if (res.session_id && !sessionId) setSessionId(res.session_id);
+      // Se quiser debugar a intenção detectada:
+      // console.log("Intent detectada:", res.intent);
 
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: res.content,
+        content: res.answer,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, aiResponse]);
-    } catch {
+    } catch (err) {
+      console.error(err);
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "Erro ao consultar o assistente.",
+        content:
+          "Erro ao consultar o assistente. Verifique sua conexão ou tente novamente em instantes.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiResponse]);
@@ -120,13 +118,13 @@ export function ChatPage() {
         {
           id: "1",
           role: "assistant",
-          content: "Olá! Sou o assistente do AquaMonitor. Como posso ajudá-lo hoje?",
+          content:
+            "Olá! Sou o assistente do AquaMonitor. Posso te ajudar a analisar os eventos do reservatório, como quantas vezes a caixa ficou vazia, cheia, tempo de funcionamento e resumos por período.",
           timestamp: new Date(),
         },
       ]);
     }
   };
-
 
   return (
     <div className="flex flex-col h-[calc(100vh-180px)]">
@@ -144,10 +142,17 @@ export function ChatPage() {
           <h2 className="text-xl text-slate-800">Assistente IA</h2>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <p className="text-sm text-slate-500">Online</p>
+            <p className="text-sm text-slate-500">
+              Online · conectado ao AquaMonitor
+            </p>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={handleClearChat} className="shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleClearChat}
+          className="shrink-0"
+        >
           <Trash2 className="w-4 h-4" />
         </Button>
       </div>
@@ -181,7 +186,11 @@ export function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+              className={`flex gap-3 ${
+                message.role === "user"
+                  ? "flex-row-reverse"
+                  : "flex-row"
+              }`}
             >
               {/* Avatar */}
               <div
@@ -201,13 +210,19 @@ export function ChatPage() {
               {/* Mensagem */}
               <Card
                 className={`p-3 max-w-[80%] ${
-                  message.role === "user" ? "bg-blue-600 text-white border-blue-600" : "bg-white"
+                  message.role === "user"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white"
                 }`}
               >
-                <p className="text-sm whitespace-pre-line">{message.content}</p>
+                <p className="text-sm whitespace-pre-line">
+                  {message.content}
+                </p>
                 <p
                   className={`text-xs mt-2 ${
-                    message.role === "user" ? "text-blue-100" : "text-slate-400"
+                    message.role === "user"
+                      ? "text-blue-100"
+                      : "text-slate-400"
                   }`}
                 >
                   {message.timestamp.toLocaleTimeString("pt-BR", {
@@ -222,15 +237,28 @@ export function ChatPage() {
 
         {/* Indicador de digitação */}
         {isTyping && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex gap-3"
+          >
             <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center">
               <Bot className="w-4 h-4 text-white" />
             </div>
             <Card className="p-3 bg-white">
               <div className="flex gap-1">
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                <div
+                  className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "0ms" }}
+                />
+                <div
+                  className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <div
+                  className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                />
               </div>
             </Card>
           </motion.div>
@@ -239,7 +267,7 @@ export function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input de Mensagem (auto-resize + multiline) */}
+      {/* Input de Mensagem */}
       <div className="shrink-0 flex gap-2 items-end">
         <div className="flex-1">
           <textarea
@@ -252,7 +280,6 @@ export function ChatPage() {
             onKeyDown={handleComposerKeyDown}
             placeholder="Digite sua pergunta..."
             rows={1}
-            // estilização: sem resize manual, sem bordas “feias”, tipografia igual ao Input
             className="
               w-full
               rounded-md border border-slate-300 bg-white
@@ -274,7 +301,6 @@ export function ChatPage() {
           <Send className="w-4 h-4" />
         </Button>
       </div>
-
     </div>
   );
 }

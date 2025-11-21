@@ -32,6 +32,7 @@ def _period_to_dates(period: str) -> Tuple[datetime, datetime]:
         start = now - timedelta(days=7)
     return start, now
 
+"""
 def fetch_sensor_events(period: str = "7d") -> List[Dict]:
     _init_firebase_admin_once()
     db = firestore.client()
@@ -55,6 +56,7 @@ def fetch_sensor_events(period: str = "7d") -> List[Dict]:
             "timestamp": data.get("timestamp"),
         })
     return results
+"""
 
 def build_summary(events: List[Dict]) -> Dict:
     by_sensor: Dict[str, int] = {}
@@ -72,3 +74,83 @@ def build_summary(events: List[Dict]) -> Dict:
         "by_sensor": dict(sorted(by_sensor.items(), key=lambda kv: kv[1], reverse=True)),
         "by_action": dict(sorted(by_action.items(), key=lambda kv: kv[1], reverse=True)),
     }
+
+
+def _get_period_range(period: str) -> Tuple[datetime, datetime]:
+    """
+    Converte códigos de período em (start, end) em UTC.
+
+    period exemplos:
+    - "2d", "7d", "20d", "30d" -> últimos X dias
+    - "this_week"              -> semana atual (domingo 00:00 até agora)
+    - "this_month"             -> mês atual (dia 1 00:00 até agora)
+    """
+    now = datetime.now(timezone.utc)
+    p = (period or "").strip().lower()
+
+    # genérico Xd (dias)
+    if p.endswith("d") and p[:-1].isdigit():
+        days = int(p[:-1])
+        start = now - timedelta(days=days)
+        return start, now
+
+    # genérico Xh (horas) – se um dia você quiser usar
+    if p.endswith("h") and p[:-1].isdigit():
+        hours = int(p[:-1])
+        start = now - timedelta(hours=hours)
+        return start, now
+
+    # semana atual (começando no domingo)
+    if p in ("this_week", "semana_atual"):
+        # weekday() -> segunda=0 … domingo=6
+        # queremos voltar até domingo (6)
+        weekday = now.weekday()  # 0..6, sendo 6 domingo
+        # se domingo, weekday=6 → deslocamento=0; se segunda (0), deslocamento=1 dia pra trás
+        offset = (weekday + 1) % 7
+        start = (now - timedelta(days=offset)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return start, now
+
+    # mês atual
+    if p in ("this_month", "mes_atual"):
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return start, now
+
+    # compatibilidade com "7d", "30d", "90d" etc
+    if p in ("7d", "30d", "90d"):
+        days = int(p[:-1])
+        start = now - timedelta(days=days)
+        return start, now
+
+    # fallback: últimos 7 dias
+    start = now - timedelta(days=7)
+    return start, now
+
+
+def fetch_sensor_events(period: str) -> List[Dict]:
+    """
+    Busca todos os eventos de nível no período informado.
+
+    Ajuste o nome da coleção abaixo conforme a sua estrutura real.
+    """
+    _init_firebase_admin_once()
+    db = firestore.client()
+    
+    start, end = _get_period_range(period)
+
+    col = db.collection(SENSORS_COLLECTION)
+
+    # Filtra por timestamp e ordena cronologicamente
+    query = (
+        col.where("timestamp", ">=", start)
+           .where("timestamp", "<=", end)
+           .order_by("timestamp")
+    )
+
+    events: List[Dict] = []
+    for doc in query.stream():
+        data = doc.to_dict()
+        events.append(data)
+
+    return events

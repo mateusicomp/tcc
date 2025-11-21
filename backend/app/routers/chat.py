@@ -1,4 +1,3 @@
-# backend/app/routers/chat.py
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Generator
