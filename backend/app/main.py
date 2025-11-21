@@ -6,6 +6,7 @@ import os
 from app.routers.chat import router as chat_router
 from app.routers.reports import router as reports_router
 from app.routers.agent import router as agent_router
+from app.routers.alerts import router as alerts_router
 from app.tasks.scheduler import start_scheduler_if_enabled
 
 load_dotenv()
@@ -30,6 +31,7 @@ app.add_middleware(
 app.include_router(chat_router, prefix="/llm", tags=["llm"])
 app.include_router(reports_router, prefix="/reports", tags=["reports"])
 app.include_router(agent_router, tags=["agent"])
+app.include_router(alerts_router, tags=["alerts"])
 
 # Scheduler 
 start_scheduler_if_enabled(app)
