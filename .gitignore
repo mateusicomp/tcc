@@ -10,7 +10,7 @@ venv/
 
 /backend/venv/
 /backend/.env
-/backend/tcc1-155fa-firebase-admi.json
+/backend/tcc1-155fa-firebase-admin.json
 
 /frontend/node_modules/
 
