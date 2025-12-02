@@ -1,7 +1,7 @@
 import os
 import requests
 from typing import List, Dict, Generator, Optional
-from app.models.dto import ChatMessage
+from app.schemas.dto import ChatMessage
 
 
 PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()

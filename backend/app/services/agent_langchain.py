@@ -2,9 +2,8 @@ import os
 import re
 from datetime import datetime
 from typing import List, Dict, Tuple
-
 from langchain_ollama import ChatOllama
-from app.models.dto import AquaIntent
+from app.schemas.dto import AquaIntent
 from app.services.firestore import fetch_sensor_events
 
 

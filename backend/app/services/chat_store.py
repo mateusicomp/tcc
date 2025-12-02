@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List
 from firebase_admin import firestore as fs
-from app.services.firestore import _init_firebase_admin_once  # já existe
+from app.services.firestore import _init_firebase_admin_once  
 
 
 def _db():

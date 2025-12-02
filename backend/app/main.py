@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
-
 from app.routers.chat import router as chat_router
 from app.routers.reports import router as reports_router
 from app.routers.agent import router as agent_router

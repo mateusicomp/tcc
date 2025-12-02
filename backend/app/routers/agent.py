@@ -1,16 +1,9 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
 from app.services.agent_langchain import handle_analytics_question
-from app.models.dto import AquaIntent
+from app.schemas.dto import AgentRequest, AgentResponse
+
 
 router = APIRouter()
-
-class AgentRequest(BaseModel):
-    question: str
-
-class AgentResponse(BaseModel):
-    answer: str
-    intent: AquaIntent
 
 @router.post("/agent", response_model=AgentResponse)
 def agent_endpoint(req: AgentRequest):

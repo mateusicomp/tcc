@@ -1,8 +1,5 @@
 from fastapi import APIRouter, Query
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel
-
+from app.schemas.dto import SensorEventIn
 from app.services.sensor_anomaly import detect_intelligent_alerts
 from app.services.sensor_realtime import process_new_sensor_event
 
@@ -19,15 +16,6 @@ def get_sensor_alerts(
     """
     result = detect_intelligent_alerts(period=period)
     return result
-
-
-
-class SensorEventIn(BaseModel):
-    sensor: str           # "baixo" ou "alto"
-    estado: str           # "subiu" ou "desceu"
-    timestamp: datetime   # ISO8601 vindo do Cloud Function
-    device_id: Optional[str] = None
-
 
 @router.post("/sensor-event")
 async def sensor_event_webhook(payload: SensorEventIn):

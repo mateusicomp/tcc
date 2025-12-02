@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Generator
-from app.models.dto import ChatRequest, ChatResponse, ChatMessage
+from app.schemas.dto import ChatRequest, ChatResponse, ChatMessage
 from app.services.llm import chat as llm_chat
 from app.services.chat_store import create_session, append_message, get_messages
 

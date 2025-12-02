@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+
 SENSORS_COLLECTION = os.getenv("FIRESTORE_SENSORS_COLLECTION", "sensores")
 
 def _init_firebase_admin_once():

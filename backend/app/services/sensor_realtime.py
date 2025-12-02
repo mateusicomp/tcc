@@ -2,10 +2,8 @@ import os
 from datetime import datetime
 from threading import Lock
 from typing import Any, Dict, Optional
-
 import numpy as np
 from firebase_admin import firestore
-
 from .autocloud_core import AutoCloud
 from .firestore import _init_firebase_admin_once
 

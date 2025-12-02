@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Any
+from datetime import datetime
 
 
 # ===== Chat =====
@@ -33,6 +34,7 @@ class ReportResponse(BaseModel):
     pdf_url: Optional[str] = None   # caso for salvar em Storage no futuro
 
 
+# ===== Agent =====
 class AquaIntent(BaseModel):
     """
     Representa a intenção interpretada da pergunta do usuário no contexto AquaMonitor.
@@ -59,3 +61,26 @@ class AquaIntent(BaseModel):
     # Filtros opcionais (nem toda ação usa)
     sensor: Optional[Literal["baixo", "alto"]] = None
     estado: Optional[Literal["subiu", "desceu"]] = None
+
+class AgentRequest(BaseModel):
+    question: str
+
+class AgentResponse(BaseModel):
+    answer: str
+    intent: AquaIntent
+
+
+# ==== Alerts ====
+class SensorEventIn(BaseModel):
+    sensor: str           # "baixo" ou "alto"
+    estado: str           # "subiu" ou "desceu"
+    timestamp: datetime   # ISO8601 vindo do Cloud Function
+    device_id: Optional[str] = None
+
+
+# ==== Cloud Function====
+class SensorEventIn(BaseModel):
+    sensor: str           # "baixo" ou "alto"
+    estado: str           # "subiu" ou "desceu"
+    timestamp: datetime   # ISO8601 vindo do Cloud Function
+    device_id: Optional[str] = None
